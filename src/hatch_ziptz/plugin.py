@@ -1,4 +1,4 @@
-from typing import Any, Union, Mapping, MutableMapping
+from typing import Any, Optional, Union, Mapping, MutableMapping, NamedTuple, List, MutableSequence, Sequence
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 from typing import BinaryIO
 from tempfile import mkstemp
@@ -8,6 +8,7 @@ import os
 import csv
 from io import StringIO
 from subprocess import run, DEVNULL
+import json
 
 try:
     from importlib.resources import files
@@ -48,6 +49,21 @@ class UnopenedTemporaryFile:
     def __del__(self):
         os.remove(self.name)
 
+class TzEntry(NamedTuple):
+    name: str
+    dst: bool
+    offset: Optional[int] = None
+
+    def dict(self) -> Mapping[str, Any]:
+        output = {
+            'name': self.name,
+            'dst': self.dst,
+        }
+        if self.offset is not None:
+            output['offset'] = self.offset
+
+        return output
+
 
 class ZiptzBuildHook(BuildHookInterface):
     PLUGIN_NAME = 'ziptz'
@@ -62,14 +78,43 @@ class ZiptzBuildHook(BuildHookInterface):
 
         dest = self.config['destination']
 
-        with StringIO(zlib.decompress((files('hatch_ziptz') / 'tz.data').read_bytes()).decode('utf-8')) as tzio, StringIO() as destination:
-            csv.writer(destination).writerows(csv.reader(tzio, dialect=ZiptzDialect))
-            tzcsv = destination.getvalue()
+        offsets = {}
 
-            output = UnopenedTemporaryFile(suffix='_ziptz.csv')
+        with StringIO(zlib.decompress((files('hatch_ziptz') / 'tzm.data').read_bytes()).decode('utf-8')) as tzmio:
+            for row in csv.DictReader(tzmio, fieldnames=('tz', 'offset'), dialect=ZiptzDialect):
+                offsets[row['tz']] = int(row['offset'])
 
-            with output.path.open('w') as out:
-                out.write(tzcsv)
+        timezones: MutableSequence[TzEntry] = []
+        timezones_map: MutableMapping[TzEntry, int] = {}
 
-            self.__files.append(output)
-            build_data['force_include'][output.name] = dest
+        zipcodes: MutableMapping[str, int] = {}
+
+        with StringIO(zlib.decompress((files('hatch_ziptz') / 'tz.data').read_bytes()).decode('utf-8')) as tzio:
+            for row in csv.DictReader(tzio, fieldnames=('zip', 'tz', 'dst'), dialect=ZiptzDialect):
+                entry = TzEntry(
+                    name=row['tz'],
+                    dst=bool(int(row['dst'])),
+                    offset=offsets.get(row['tz']),
+                )
+
+                if entry in timezones_map:
+                    index = timezones_map[entry]
+                else:
+                    index = len(timezones)
+                    timezones.append(entry)
+                    timezones_map[entry] = index
+
+                zipcodes[row['zip']] = index
+
+        output = UnopenedTemporaryFile(suffix='_ziptz.json')
+
+        payload = {
+            'timezones': [entry.dict() for entry in timezones],
+            'zipcodes': zipcodes,
+        }
+
+        with output.path.open('w') as out:
+            json.dump(payload, out, separators=(',', ':'))
+
+        self.__files.append(output)
+        build_data['force_include'][output.name] = dest
