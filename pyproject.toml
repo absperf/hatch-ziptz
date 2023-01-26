@@ -1,6 +1,6 @@
 [project]
 name = 'hatch-ziptz'
-version = '2022.11.3'
+version = '2022.11.4'
 description = 'Grab the locally-embedded tz database from the ziptz source and plug it into the uploaded project, replacing a found empty ziptz.csv file'
 license = {text = 'MIT'}
 readme = 'README.md'

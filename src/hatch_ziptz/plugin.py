@@ -60,21 +60,16 @@ class ZiptzBuildHook(BuildHookInterface):
         if self.target_name != 'wheel':
             return
 
+        dest = self.config['destination']
+
         with StringIO(zlib.decompress((files('hatch_ziptz') / 'tz.data').read_bytes()).decode('utf-8')) as tzio, StringIO() as destination:
             csv.writer(destination).writerows(csv.reader(tzio, dialect=ZiptzDialect))
             tzcsv = destination.getvalue()
 
-        for included in self.build_config.builder.recurse_included_files():
-            path = Path(included.path)
-            distribution_path = Path(included.distribution_path)
-            if distribution_path.name == 'ziptz.csv' and path.stat().st_size == 0:
-                output = UnopenedTemporaryFile(suffix='_ziptz.csv')
+            output = UnopenedTemporaryFile(suffix='_ziptz.csv')
 
-                with output.path.open('w') as out:
-                    out.write(tzcsv)
+            with output.path.open('w') as out:
+                out.write(tzcsv)
 
-                self.__files.append(output)
-                build_data['force_include'][output.name] = str(distribution_path)
-
-                # TODO: no safe way to explicitly exclude the previous file.
-                # Deleting it works, but in some build systems, this deletes the source file as well.
+            self.__files.append(output)
+            build_data['force_include'][output.name] = dest
