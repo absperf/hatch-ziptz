@@ -1,4 +1,4 @@
-from typing import Any, Union, Mapping
+from typing import Any, Union, Mapping, MutableMapping
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 from typing import BinaryIO
 from tempfile import mkstemp
@@ -56,7 +56,7 @@ class ZiptzBuildHook(BuildHookInterface):
         super().__init__(*args, **kwargs)
         self.__files = []
 
-    def initialize(self, version: str, build_data: Mapping[str, Any]) -> None:
+    def initialize(self, version: str, build_data: MutableMapping[str, Any]) -> None:
         if self.target_name != 'wheel':
             return
 
@@ -75,4 +75,6 @@ class ZiptzBuildHook(BuildHookInterface):
 
                 self.__files.append(output)
                 build_data['force_include'][output.name] = str(distribution_path)
-                os.remove(included.path)
+
+                # TODO: no safe way to explicitly exclude the previous file.
+                # Deleting it works, but in some build systems, this deletes the source file as well.
